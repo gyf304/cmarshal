@@ -5,6 +5,7 @@
 
 /* Global Configuration
 cmarshal:`{
+	"cJSONInclude": "./cJSON.h",
 	"unmarshalerHeaderFile": "./jsonstructs.unmarshaler.h",
 	"unmarshalerImplFile": "./jsonstructs.unmarshaler.c"
 }`

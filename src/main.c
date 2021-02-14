@@ -12,10 +12,6 @@ typedef struct {
 	CMarshalTypeAnnotation anno;
 } AnnotatedType;
 
-const char *args[] = {
-	"-fparse-all-comments"
-};
-
 static int typeExists(CXType type, AllocationContext *ctx) {
 	int found = 0;
 	// mucho inefficient but meh.
@@ -42,17 +38,21 @@ static void typeCallback(void *context, CXType type, CMarshalTypeAnnotation *ann
 		atype->anno = *anno;
 }
 
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
 	int status = 0;
 	if (argc < 2) {
 		return -1;
 	}
 
+	/* pulling something really janky here. kids, don't be like me */
+	argv[0] = "-fparse-all-comments";
+	const char *inputFileName = argv[argc-1];
+
 	CXIndex index = clang_createIndex(0, 0);
 	CXTranslationUnit unit = clang_parseTranslationUnit(
 		index,
-		argv[1], args, sizeof(args) / sizeof(args[0]),
+		inputFileName, (void *)argv, argc-1,
 		NULL, 0,
 		CXTranslationUnit_None
 	);
@@ -71,6 +71,8 @@ int main(int argc, const char *argv[])
 
 	if (!findConfig(cursor, configCallback, &config)) {
 		fprintf(stderr, "Config not found in translation unit, exiting.\n");
+		fprintf(stderr, "Hint: Check config validity, also try appending a \";\" to the config comment.\n");
+
 		freeConfigFields(&config);
 		clang_disposeTranslationUnit(unit);
 		clang_disposeIndex(index);
@@ -110,7 +112,7 @@ int main(int argc, const char *argv[])
 		findDependentTypes(atype->type, typeCallback, unmarshalerTypes);
 	}
 
-	for (int unmarshal = 0; unmarshal < 2; unmarshal++) {
+	for (int unmarshal = 0; status == 0 && unmarshal < 2; unmarshal++) {
 		enum GenerateStatus genstat = GENERATE_OK;
 		char *headerPath = NULL;
 		char *implPath = NULL;
@@ -132,42 +134,48 @@ int main(int argc, const char *argv[])
 		if (headerFile == NULL) {
 			fprintf(stderr, "Cannot open %s\n", headerPath);
 			status = -1;
-			goto end;
+			break;
 		}
 		FILE *implFile = implPath ? fopen(implPath, "w") : NULL;
 		if (implPath != NULL && implFile == NULL) {
 			fclose(headerFile);
 			fprintf(stderr, "Cannot open %s\n", implPath);
 			status = -1;
-			goto end;
+			break;
 		}
 		/* write headers */
 		fprintf(headerFile, "#include \"%s\"\n", config.cJSONInclude);
-		fprintf(headerFile, "#include \"%s\"\n", argv[1]);
+		fprintf(headerFile, "#include \"%s\"\n", inputFileName);
 		genHeaderPreamble(headerFile, &config, unmarshal);
 		if (implFile) {
 			fprintf(implFile, "#include \"%s\"\n", headerPath);
 			fprintf(implFile, "#include <string.h>\n");
 		}
 		/* first generate forward declarations */
-		for (int i = 0; i < types->size; i++) {
+		for (int i = 0; status == 0 && i < types->size; i++) {
 			AnnotatedType *atype = (AnnotatedType *)(types->pointers[i]);
 			int export = unmarshal ? atype->anno.unmarshal : atype->anno.marshal;
 			genstat = genForwardDecl(export ? headerFile : implFile, &config, atype->type, export ? NULL : "static", unmarshal);
 			if (genstat != GENERATE_OK) {
 				status = -1;
-				goto end;
+				break;
 			}
 		}
 		/* then generate implementations */
-		for (int i = 0; i < types->size; i++) {
+		for (int i = 0; status == 0 && i < types->size; i++) {
 			AnnotatedType *atype = (AnnotatedType *)(types->pointers[i]);
 			int export = unmarshal ? atype->anno.unmarshal : atype->anno.marshal;
-			genImpl(implFile, &config, atype->type, export ? NULL : "static", unmarshal);
+			genstat = genImpl(implFile, &config, atype->type, export ? NULL : "static", unmarshal);
+			if (genstat != GENERATE_OK) {
+				status = -1;
+				break;
+			}
 		}
+		if (implFile)
+			fclose(implFile);
+		fclose(headerFile);
 	}
 
-end:
 	destroyAllocationContext(marshalerTypes);
 	destroyAllocationContext(unmarshalerTypes);
 

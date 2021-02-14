@@ -26,6 +26,23 @@ static char *uppercase(const char *s) {
 	return uppercased;
 }
 
+static int isTypedefOfNamelessRecord(CXType type) {
+	CXCursor typeDecl = clang_getTypeDeclaration(type);
+	CXCursor childTypeDecl = getFirstChild(typeDecl);
+	CXType childType = clang_getCursorType(childTypeDecl);
+	if (type.kind != CXType_Typedef || childType.kind != CXType_Record) {
+		return 0;
+	}
+	int nameless = 0;
+	CXString s = clang_getCursorSpelling(childTypeDecl);
+	if (strlen(clang_getCString(s)) == 0) {
+		nameless = 1;
+	}
+	clang_disposeString(s);
+
+	return nameless;
+}
+
 enum GenerateStatus genHeaderPreamble(FILE *out, CMarshalConfig *cfg, int unmarshal) {
 	const char *prefix = unmarshal ? cfg->unmarshalerPrefix : cfg->marshalerPrefix;
 	char *uppercased = uppercase(prefix);
@@ -136,7 +153,6 @@ static enum CXChildVisitResult collectFields(CXCursor c, CXCursor parent, CXClie
 				tfprintf(l, out, "\tcJSON_AddItemToObject(obj, %s, arr);", quotedKeyStr);
 				tfprintf(l, out, "}");
 				free(pointeeMarshalerName);
-				free(lenField);
 			} else {
 				tfprintf(l, out, "cJSON_AddItemToObject(obj, %s, %s(&src->%s));", quotedKeyStr, opName, nameStr);
 			}
@@ -159,11 +175,15 @@ enum GenerateStatus genForwardDecl(FILE *out, CMarshalConfig *cfg, CXType type, 
 	if (out == NULL) {
 		return GENERATE_OK;
 	}
+
+	if (isTypedefOfNamelessRecord(type)) {
+		return GENERATE_OK;
+	}
+
 	const char *prefix = unmarshal ? cfg->unmarshalerPrefix : cfg->marshalerPrefix;
 
 	char *uppercasedPrefix = uppercase(prefix);
 	CXString typeSpelling = clang_getTypeSpelling(type);
-	CXCursor declCursor = clang_getTypeDeclaration(type);
 	const char *typeSpellingStr = clang_getCString(typeSpelling);
 	char *opName = getPrefixedEscapedTypeName(prefix, type);
 
@@ -211,12 +231,16 @@ enum GenerateStatus genImpl(FILE *out, CMarshalConfig *cfg, CXType type, const c
 	if (out == NULL) {
 		return GENERATE_OK;
 	}
+
+	if (isTypedefOfNamelessRecord(type)) {
+		return GENERATE_OK;
+	}
+
 	enum GenerateStatus result = GENERATE_OK;
 	const char *prefix = unmarshal ? cfg->unmarshalerPrefix : cfg->marshalerPrefix;
 
 	char *uppercasedPrefix = uppercase(prefix);
 	CXString typeSpelling = clang_getTypeSpelling(type);
-	CXCursor declCursor = clang_getTypeDeclaration(type);
 	const char *typeSpellingStr = clang_getCString(typeSpelling);
 	char *opName = getPrefixedEscapedTypeName(prefix, type);
 
@@ -307,7 +331,7 @@ enum GenerateStatus genImpl(FILE *out, CMarshalConfig *cfg, CXType type, const c
 				tfprintf(l, out, "*dst = allocator(allocator_context, sizeof(**dst));");
 				tfprintf(l, out, "if (*dst == NULL)");
 				tfprintf(l, out, "\treturn %s_ERROR_CANNOT_ALLOCATE;", uppercasedPrefix);
-				tfprintf(l, out, "return %s(*dst, src, allocator, allocator_context);\n", opName);
+				tfprintf(l, out, "return %s(*dst, src, allocator, allocator_context);", opName);
 				free(opName);
 			}
 		} else {
@@ -317,7 +341,7 @@ enum GenerateStatus genImpl(FILE *out, CMarshalConfig *cfg, CXType type, const c
 				tfprintf(l, out, "return cJSON_CreateString(*src);");
 			} else {
 				char *opName = getPrefixedEscapedTypeName(prefix, pointeeType);
-				tfprintf(l, out, "\treturn %s(*src);", opName);
+				tfprintf(l, out, "return %s(*src);", opName);
 				free(opName);
 			}
 		}
@@ -326,6 +350,9 @@ enum GenerateStatus genImpl(FILE *out, CMarshalConfig *cfg, CXType type, const c
 	case CXType_Typedef: {
 		CXCursor child = getFirstChild(clang_getTypeDeclaration(type));
 		CXType actualType = clang_getCursorType(child);
+		if (actualType.kind == CXType_Invalid) {
+			actualType = clang_getTypedefDeclUnderlyingType(clang_getTypeDeclaration(type));
+		}
 		char *opName = getPrefixedEscapedTypeName(prefix, actualType);
 		if (unmarshal) {
 			tfprintf(l, out, "return %s(dst, src, allocator, allocator_context);", opName);
@@ -336,6 +363,11 @@ enum GenerateStatus genImpl(FILE *out, CMarshalConfig *cfg, CXType type, const c
 		break;
 	}
 	case CXType_Record: {
+		if (clang_Cursor_isAnonymous(clang_getTypeDeclaration(type))) {
+			fprintf(stderr, "Failed to generate for type %s: unsupported anonymous type.\n", typeSpellingStr);
+			result = GENERATE_ERROR_UNSUPPORTED_TYPE;
+			break;
+		}
 		// a little bit complicated this one.
 		CXCursor c = clang_getTypeDeclaration(type);
 		MarshalData data = {out, prefix, uppercasedPrefix, unmarshal};
