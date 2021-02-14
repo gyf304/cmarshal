@@ -12,17 +12,7 @@
 #include "./jsonstructs.h"
 
 char *getPrefixedEscapedTypeName(const char *prefix, CXType type);
-cJSON *getAnnotation(CXCursor c);
-
-CMarshalConfig *getCMarshalConfig(CXCursor c);
-void freeCMarshalConfig(CMarshalConfig *anno);
-
-CMarshalMemberAnnotation *getCMarshalMemberAnnotation(CXCursor c);
-void freeCMarshalMemberAnnotation(CMarshalMemberAnnotation *anno);
-
 CXCursor getFirstChild(CXCursor c);
-int isTypedefOfNamelessRecord(CXType type);
-
 char *quoteString(const char *s);
 
 #endif

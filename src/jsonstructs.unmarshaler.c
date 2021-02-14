@@ -1,16 +1,7 @@
-/* Auto-generated, do not edit */
-#include "./jsonstructs.gen.h"
+#include "./jsonstructs.unmarshaler.h"
 #include <string.h>
-/*
- * Unexported Unmarshaler Function Declarations 
- */
-/* unmarshaler for type char * */
 static enum unmarshal_status unmarshal_char_p(char ** dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context);
-/* unmarshaler for type _Bool */
 static enum unmarshal_status unmarshal__Bool(_Bool* dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context);
-/*
- * Unmarshaler Function Implementations 
- */ 
 enum unmarshal_status unmarshal_CMarshalConfig(CMarshalConfig* dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context) 
 {
 	if (!cJSON_IsObject(src))
@@ -61,19 +52,12 @@ enum unmarshal_status unmarshal_CMarshalConfig(CMarshalConfig* dst, const cJSON*
 	}
 	return UNMARSHAL_OK;
 }
-
 enum unmarshal_status unmarshal_CMarshalTypeAnnotation(CMarshalTypeAnnotation* dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context) 
 {
 	if (!cJSON_IsObject(src))
 		return UNMARSHAL_ERROR_CONFLICTING_TYPES;
 	cJSON *item = NULL;
 	enum unmarshal_status status = UNMARSHAL_OK;
-	item = cJSON_GetObjectItemCaseSensitive(src, "enabled");
-	if (item != NULL) {
-		status = unmarshal__Bool(&dst->enabled, item, allocator, allocator_context);
-		if (status != UNMARSHAL_OK)
-			return status;
-	}
 	item = cJSON_GetObjectItemCaseSensitive(src, "marshal");
 	if (item != NULL) {
 		status = unmarshal__Bool(&dst->marshal, item, allocator, allocator_context);
@@ -88,22 +72,15 @@ enum unmarshal_status unmarshal_CMarshalTypeAnnotation(CMarshalTypeAnnotation* d
 	}
 	return UNMARSHAL_OK;
 }
-
 enum unmarshal_status unmarshal_CMarshalMemberAnnotation(CMarshalMemberAnnotation* dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context) 
 {
 	if (!cJSON_IsObject(src))
 		return UNMARSHAL_ERROR_CONFLICTING_TYPES;
 	cJSON *item = NULL;
 	enum unmarshal_status status = UNMARSHAL_OK;
-	item = cJSON_GetObjectItemCaseSensitive(src, "boolean");
+	item = cJSON_GetObjectItemCaseSensitive(src, "ignore");
 	if (item != NULL) {
-		status = unmarshal__Bool(&dst->boolean, item, allocator, allocator_context);
-		if (status != UNMARSHAL_OK)
-			return status;
-	}
-	item = cJSON_GetObjectItemCaseSensitive(src, "required");
-	if (item != NULL) {
-		status = unmarshal__Bool(&dst->required, item, allocator, allocator_context);
+		status = unmarshal__Bool(&dst->ignore, item, allocator, allocator_context);
 		if (status != UNMARSHAL_OK)
 			return status;
 	}
@@ -121,7 +98,6 @@ enum unmarshal_status unmarshal_CMarshalMemberAnnotation(CMarshalMemberAnnotatio
 	}
 	return UNMARSHAL_OK;
 }
-
 static enum unmarshal_status unmarshal_char_p(char ** dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context) 
 {
 	if (cJSON_IsNull(src)) {
@@ -129,7 +105,7 @@ static enum unmarshal_status unmarshal_char_p(char ** dst, const cJSON* src, unm
 		return UNMARSHAL_OK;
 	}
 	if (!cJSON_IsString(src))
-	return UNMARSHAL_ERROR_CONFLICTING_TYPES;
+		return UNMARSHAL_ERROR_CONFLICTING_TYPES;
 	char *s = cJSON_GetStringValue(src);
 	size_t len = strlen(s);
 	if (allocator == NULL)
@@ -140,7 +116,6 @@ static enum unmarshal_status unmarshal_char_p(char ** dst, const cJSON* src, unm
 	memcpy(*dst, s, len+1);
 	return UNMARSHAL_OK;
 }
-
 static enum unmarshal_status unmarshal__Bool(_Bool* dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context) 
 {
 	if (!cJSON_IsBool(src))

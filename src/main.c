@@ -1,22 +1,27 @@
 #include "./common.h"
 
+#include "./allocation.h"
 #include "./marshal.h"
-#include "./unmarshal.h"
+#include "./finders.h"
+#include "./config.h"
 
 #define MAX_TYPES_COUNT 4096
 
-CXType types[MAX_TYPES_COUNT] = {0};
-int typesCount = 0;
+typedef struct {
+	CXType type;
+	CMarshalTypeAnnotation anno;
+} AnnotatedType;
 
 const char *args[] = {
 	"-fparse-all-comments"
 };
 
-static int typeExists(CXType type) {
+static int typeExists(CXType type, AllocationContext *ctx) {
 	int found = 0;
 	// mucho inefficient but meh.
-	for (int i = 0; i < typesCount; i++) {
-		if (clang_equalTypes(types[i], type)) {
+	for (int i = 0; i < ctx->size; i++) {
+		AnnotatedType *existingType = (AnnotatedType *)ctx->pointers[i];
+		if (clang_equalTypes(existingType->type, type)) {
 			found = 1;
 			break;
 		}
@@ -24,63 +29,25 @@ static int typeExists(CXType type) {
 	return found;
 }
 
-static enum CXChildVisitResult expander(CXCursor c, CXCursor parent, CXClientData client_data) {
-	CXType type = clang_getCursorType(c);
-	CXString typeSpelling = clang_getTypeSpelling(type);
-	if (typesCount < MAX_TYPES_COUNT) {
-		if (!typeExists(type) && !isTypedefOfNamelessRecord(type)) {
-			types[typesCount++] = type;
-		}
+static void typeCallback(void *context, CXType type, CMarshalTypeAnnotation *anno) {
+	AllocationContext *ctx = context;
+	if (typeExists(type, ctx)) {
+		return;
 	}
-	clang_disposeString(typeSpelling);
-	return CXChildVisit_Continue;
-}
-
-// we scan the AST for `{"cmarshal": true}` comments
-static enum CXChildVisitResult visitor(CXCursor c, CXCursor parent, CXClientData client_data)
-{
-	enum CXCursorKind kind = clang_getCursorKind(c);
-	// CXCursor_TypedefDecl
-	CXType type = clang_getCursorType(c);
-	if (type.kind == CXType_Invalid) {
-		return CXChildVisit_Recurse;
-	}
-	cJSON *annotation = getAnnotation(c);
-	if (annotation && typesCount < MAX_TYPES_COUNT) {
-		if (cJSON_IsTrue(annotation) && !typeExists(type) && !isTypedefOfNamelessRecord(type)) {
-			types[typesCount++] = type;
-		}
-	}
-	cJSON_Delete(annotation);
-	return CXChildVisit_Recurse;
-}
-
-static enum CXChildVisitResult findConfig(CXCursor c, CXCursor parent, CXClientData client_data)
-{
-	enum CXChildVisitResult result = CXChildVisit_Recurse;
-	CMarshalConfig **annop = client_data;
-	CMarshalConfig *anno = getCMarshalConfig(c);
-	if (anno != NULL) {
-		*annop = anno;
-		return CXChildVisit_Break;
-	}
-	return CXChildVisit_Recurse;
-}
-
-static void expandTypes()
-{
-	for (int i = 0; i < typesCount; i++) {
-		CXCursor c = clang_getTypeDeclaration(types[i]);
-		clang_visitChildren(c, expander, NULL);
-	}
+	AnnotatedType *atype = allocateFromContext(ctx, sizeof(AnnotatedType));
+	atype->type = type;
+	atype->anno.marshal = 0;
+	atype->anno.unmarshal = 0;
+	if (anno)
+		atype->anno = *anno;
 }
 
 int main(int argc, const char *argv[])
 {
+	int status = 0;
 	if (argc < 2) {
 		return -1;
 	}
-	const char *preamble = "/* Auto-generated, do not edit */";
 
 	CXIndex index = clang_createIndex(0, 0);
 	CXTranslationUnit unit = clang_parseTranslationUnit(
@@ -97,100 +64,117 @@ int main(int argc, const char *argv[])
 
 	CXCursor cursor = clang_getTranslationUnitCursor(unit);
 
-	CMarshalConfig *config = NULL;
-	clang_visitChildren(cursor, findConfig, &config);
-	if (config == NULL) {
-		fprintf(stderr, "Cannot find configuration, quitting\n");
+	CMarshalConfig config = {0};
+	config.cJSONInclude = strdup("cJSON.h");
+	config.marshalerPrefix = strdup("marshal");
+	config.unmarshalerPrefix = strdup("unmarshal");
+
+	if (!findConfig(cursor, configCallback, &config)) {
+		fprintf(stderr, "Config not found in translation unit, exiting.\n");
+		freeConfigFields(&config);
+		clang_disposeTranslationUnit(unit);
+		clang_disposeIndex(index);
 		return -1;
 	}
 
-	// fill in defaults. This is fine because we track allocations out-of-band.
-	if (config->cJSONInclude == NULL) {
-		config->cJSONInclude = "cJSON.h";
-	}
-	if (config->marshalerPrefix == NULL) {
-		config->marshalerPrefix = "marshal";
-	}
-	if (config->unmarshalerPrefix == NULL) {
-		config->unmarshalerPrefix = "unmarshal";
-	}
+	/* collect types */
+	AllocationContext *annotatedTypes = createAllocationContext(0);
 
-	clang_visitChildren(cursor, visitor, NULL);
+	AllocationContext *marshalerTypes = createAllocationContext(0);
+	AllocationContext *unmarshalerTypes = createAllocationContext(0);
+	findAnnotatedTypes(cursor, typeCallback, annotatedTypes);
 
-	int exportedTypesCount = typesCount;
-	expandTypes();
+	for (int i = 0; i < annotatedTypes->size; i++) {
+		AnnotatedType *atype = (AnnotatedType *)(annotatedTypes->pointers[i]);
+		if (atype->anno.marshal) {
+			AnnotatedType *atypeCopy = allocateFromContext(marshalerTypes, sizeof(AnnotatedType));
+			*atypeCopy = *atype;
+		}
 
-	if (config->marshalerHeaderFile != NULL) {
-		FILE *out = fopen(config->marshalerHeaderFile, "w");
-		if (out != NULL) {
-			fprintf(out, "%s\n", preamble);
-			fprintf(out, "#include \"%s\"\n", config->cJSONInclude);
-			fprintf(out, "#include \"%s\"\n\n", argv[1]);
-			fprintf(out, "/*\n * Exported Marshaler Function Declarations \n */\n");
-			for (int i = 0; i < exportedTypesCount; i++) {
-				genMarshalerForwardDecl(types[i], out, config->marshalerPrefix, NULL);
-			}
-			fclose(out);
+		if (atype->anno.unmarshal) {
+			AnnotatedType *atypeCopy = allocateFromContext(unmarshalerTypes, sizeof(AnnotatedType));
+			*atypeCopy = *atype;
 		}
 	}
 
-	if (config->marshalerHeaderFile != NULL && config->marshalerImplFile != NULL) {
-		FILE *out = fopen(config->marshalerImplFile, "w");
-		if (out != NULL) {
-			fprintf(out, "%s\n", preamble);
-			fprintf(out, "#include \"%s\"\n", config->marshalerHeaderFile);
-			fprintf(out, "/*\n * Unexported Marshaler Function Declarations \n */\n");
-			for (int i = exportedTypesCount; i < typesCount; i++) {
-				genMarshalerForwardDecl(types[i], out, config->marshalerPrefix, "static");
+	destroyAllocationContext(annotatedTypes);
+
+	/* unfold types */
+	for (int i = 0; i < marshalerTypes->size; i++) {
+		AnnotatedType *atype = (AnnotatedType *)(marshalerTypes->pointers[i]);
+		findDependentTypes(atype->type, typeCallback, marshalerTypes);
+	}
+
+	for (int i = 0; i < unmarshalerTypes->size; i++) {
+		AnnotatedType *atype = (AnnotatedType *)(unmarshalerTypes->pointers[i]);
+		findDependentTypes(atype->type, typeCallback, unmarshalerTypes);
+	}
+
+	for (int unmarshal = 0; unmarshal < 2; unmarshal++) {
+		enum GenerateStatus genstat = GENERATE_OK;
+		char *headerPath = NULL;
+		char *implPath = NULL;
+		AllocationContext *types = NULL;
+		if (unmarshal == 0) {
+			headerPath = config.marshalerHeaderFile;
+			implPath = config.marshalerImplFile;
+			types = marshalerTypes;
+		} else {
+			headerPath = config.unmarshalerHeaderFile;
+			implPath = config.unmarshalerImplFile;
+			types = unmarshalerTypes;
+		}
+
+		if (headerPath == NULL)
+			continue;
+
+		FILE *headerFile = fopen(headerPath, "w");
+		if (headerFile == NULL) {
+			fprintf(stderr, "Cannot open %s\n", headerPath);
+			status = -1;
+			goto end;
+		}
+		FILE *implFile = implPath ? fopen(implPath, "w") : NULL;
+		if (implPath != NULL && implFile == NULL) {
+			fclose(headerFile);
+			fprintf(stderr, "Cannot open %s\n", implPath);
+			status = -1;
+			goto end;
+		}
+		/* write headers */
+		fprintf(headerFile, "#include \"%s\"\n", config.cJSONInclude);
+		fprintf(headerFile, "#include \"%s\"\n", argv[1]);
+		genHeaderPreamble(headerFile, &config, unmarshal);
+		if (implFile) {
+			fprintf(implFile, "#include \"%s\"\n", headerPath);
+			fprintf(implFile, "#include <string.h>\n");
+		}
+		/* first generate forward declarations */
+		for (int i = 0; i < types->size; i++) {
+			AnnotatedType *atype = (AnnotatedType *)(types->pointers[i]);
+			int export = unmarshal ? atype->anno.unmarshal : atype->anno.marshal;
+			genstat = genForwardDecl(export ? headerFile : implFile, &config, atype->type, export ? NULL : "static", unmarshal);
+			if (genstat != GENERATE_OK) {
+				status = -1;
+				goto end;
 			}
-			fprintf(out, "/*\n * Marshaler Function Implementations \n */ \n");
-			for (int i = 0; i < typesCount; i++) {
-				const char *specifier = NULL;
-				if (i >= exportedTypesCount)
-					specifier = "static";
-				genMarshalerImpl(types[i], out, config->marshalerPrefix, specifier);
-			}
-			fclose(out);
+		}
+		/* then generate implementations */
+		for (int i = 0; i < types->size; i++) {
+			AnnotatedType *atype = (AnnotatedType *)(types->pointers[i]);
+			int export = unmarshal ? atype->anno.unmarshal : atype->anno.marshal;
+			genImpl(implFile, &config, atype->type, export ? NULL : "static", unmarshal);
 		}
 	}
 
-	if (config->unmarshalerHeaderFile != NULL) {
-		FILE *out = fopen(config->unmarshalerHeaderFile, "w");
-		if (out != NULL) {
-			fprintf(out, "%s\n", preamble);
-			fprintf(out, "#include \"%s\"\n", config->cJSONInclude);
-			fprintf(out, "#include \"%s\"\n\n", argv[1]);
-			genUnmarshalUtils(out, config->unmarshalerPrefix);
-			fprintf(out, "/*\n * Exported Unmarshaler Function Declarations \n */\n");
-			for (int i = 0; i < exportedTypesCount; i++) {
-				genUnmarshalerForwardDecl(types[i], out, config->unmarshalerPrefix, NULL);
-			}
-			fclose(out);
-		}
-	}
+end:
+	destroyAllocationContext(marshalerTypes);
+	destroyAllocationContext(unmarshalerTypes);
 
-	if (config->unmarshalerHeaderFile != NULL && config->unmarshalerImplFile != NULL) {
-		FILE *out = fopen(config->unmarshalerImplFile, "w");
-		if (out != NULL) {
-			fprintf(out, "%s\n", preamble);
-			fprintf(out, "#include \"%s\"\n", config->unmarshalerHeaderFile);
-			genUnmarshalerImplPreamble(out, config->unmarshalerPrefix);
-			fprintf(out, "/*\n * Unexported Unmarshaler Function Declarations \n */\n");
-			for (int i = exportedTypesCount; i < typesCount; i++) {
-				genUnmarshalerForwardDecl(types[i], out, config->unmarshalerPrefix, "static");
-			}
-			fprintf(out, "/*\n * Unmarshaler Function Implementations \n */ \n");
-			for (int i = 0; i < typesCount; i++) {
-				const char *specifier = NULL;
-				if (i >= exportedTypesCount)
-					specifier = "static";
-				genUnmarshalerImpl(types[i], out, config->unmarshalerPrefix, specifier);
-			}
-			fclose(out);
-		}
-	}
+	freeConfigFields(&config);
 
-	freeCMarshalConfig(config);
 	clang_disposeTranslationUnit(unit);
 	clang_disposeIndex(index);
+
+	return status;
 }
