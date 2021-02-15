@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<title>CMarshal</title>
+	<link rel="stylesheet" data-name="vs/editor/editor.main"
+		href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.min.css">
+</head>
+
+<body>
+	<div style="display:none">
+		<form id="form" action="/generate" method="post" enctype="multipart/form-data">
+			<input type="file" id="files" name="files" multiple>
+		</form>
+	</div>
+	<div id="container" style="position: fixed; left:0; top:0; height:100vh; width:100vw;"></div>
+	<div style="display:flex; position:fixed; bottom:10px; left:calc(50vw - 100px); height:30px; width:200px;">
+		<button onclick="window.location.pathname='/upload'" style="flex-grow:4">Manual Upload</button></a>
+		<div style="flex-grow:1"></div>
+		<button id="generate-button" style="flex-grow:4">Generate</button>
+	</div>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/loader.min.js"></script>
+	<script>
+		// Based on https://jsfiddle.net/developit/bwgkr6uq/ which just works but is based on unpkg.com.
+		// Provided by loader.min.js.
+		require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs' } });
+		window.MonacoEnvironment = { getWorkerUrl: () => proxy };
+		let proxy = URL.createObjectURL(new Blob([`
+	self.MonacoEnvironment = {
+		baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min'
+	};
+	importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/base/worker/workerMain.min.js');
+`], { type: 'text/javascript' }));
+		require(["vs/editor/editor.main"], function () {
+			let src = "/* cmarshal:`true` */\ntypedef struct {\n\tint a;\n\tint b;\n} MyStruct;\n";
+			let editor = monaco.editor.create(document.getElementById('container'), {
+				value: src,
+				language: 'c',
+				theme: 'vs-dark',
+				automaticLayout: true
+			});
+			let form = document.getElementById("form");
+			let fileInput = document.getElementById("files");
+			let button = document.getElementById("generate-button");
+			button.addEventListener("click", () => {
+				console.log("generate2");
+				let fileList = new DataTransfer();
+				fileList.items.add(new File([editor.getValue()], "demo.h", {type : 'text/plain'}));
+				fileInput.files = fileList.files;
+				form.submit();
+			});
+		});
+	</script>
+</body>
+
+</html>
