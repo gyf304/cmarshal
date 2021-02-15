@@ -1,3 +1,4 @@
+/* auto-generated, do not edit */
 #include "./demo.marshaler.h"
 #include <string.h>
 static cJSON* marshal_int(int* src);
@@ -6,7 +7,6 @@ static cJSON* marshal_MyStruct2_p(MyStruct2 ** src);
 static cJSON* marshal_int_p(int ** src);
 static cJSON* marshal_size_t(size_t* src);
 static cJSON* marshal_MyStruct2(MyStruct2* src);
-static cJSON* marshal_unsigned_long(unsigned long* src);
 cJSON* marshal_MyStruct(MyStruct* src) 
 {
 	cJSON* obj = cJSON_CreateObject();
@@ -55,7 +55,7 @@ static cJSON* marshal_MyStruct2(MyStruct2* src)
 	cJSON_AddItemToObject(obj, "b", marshal_int(&src->b));
 	return obj;
 }
-static cJSON* marshal_unsigned_long(unsigned long* src) 
+cJSON* marshal_unsigned_long(unsigned long* src) 
 {
 	return cJSON_CreateNumber((double) *src);
 }

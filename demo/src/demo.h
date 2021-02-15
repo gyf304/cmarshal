@@ -28,4 +28,9 @@ typedef struct {
 	size_t len; /* cmarshal:`{"ignore": true}` */
 } MyStruct;
 
+#ifndef CMARSHAL_GENERATE
+#include "./demo.marshaler.h"
+#include "./demo.unmarshaler.h"
+#endif
+
 #endif

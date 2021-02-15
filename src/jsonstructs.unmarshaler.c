@@ -1,3 +1,4 @@
+/* auto-generated, do not edit */
 #include "./jsonstructs.unmarshaler.h"
 #include <string.h>
 static enum unmarshal_status unmarshal_char_p(char ** dst, const cJSON* src, unmarshal_allocator_t* allocator, void* allocator_context);

@@ -52,8 +52,7 @@ enum GenerateStatus genHeaderPreamble(FILE *out, CMarshalConfig *cfg, int unmars
 		tfprintf(l,   out, "%s_OK = 0,", uppercased);
 		tfprintf(l,   out, "%s_ERROR_UNSPECIFIED,", uppercased);
 		tfprintf(l,   out, "%s_ERROR_CONFLICTING_TYPES,", uppercased);
-		tfprintf(l,   out, "%s_ERROR_CANNOT_ALLOCATE,", uppercased);
-		tfprintf(l,   out, "%s_ERROR_MISSING_REQUIRED_KEY", uppercased);
+		tfprintf(l,   out, "%s_ERROR_CANNOT_ALLOCATE", uppercased);
 		tfprintf(--l, out, "};");
 		tfprintf(l,   out, "typedef void *(%s_allocator_t) (void *context, size_t size);", prefix);
 	}

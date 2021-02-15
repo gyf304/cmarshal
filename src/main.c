@@ -45,6 +45,8 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	int randNum = rand();
+
 	/* pulling something really janky here. kids, don't be like me */
 	argv[0] = "-fparse-all-comments";
 	const char *inputFileName = argv[argc-1];
@@ -144,10 +146,14 @@ int main(int argc, char *argv[])
 			break;
 		}
 		/* write headers */
+		fprintf(headerFile, "/* auto-generated, do not edit */\n");
+		fprintf(headerFile, "#ifndef _CMARSHAL_%s_%d\n", unmarshal ? "UNMARSHALER" : "MARSHALER", randNum);
+		fprintf(headerFile, "#define _CMARSHAL_%s_%d\n", unmarshal ? "UNMARSHALER" : "MARSHALER", randNum);
 		fprintf(headerFile, "#include \"%s\"\n", config.cJSONInclude);
 		fprintf(headerFile, "#include \"%s\"\n", inputFileName);
 		genHeaderPreamble(headerFile, &config, unmarshal);
 		if (implFile) {
+			fprintf(implFile, "/* auto-generated, do not edit */\n");
 			fprintf(implFile, "#include \"%s\"\n", headerPath);
 			fprintf(implFile, "#include <string.h>\n");
 		}
@@ -173,6 +179,7 @@ int main(int argc, char *argv[])
 		}
 		if (implFile)
 			fclose(implFile);
+		fprintf(headerFile, "#endif\n");
 		fclose(headerFile);
 	}
 
