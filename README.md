@@ -1,5 +1,7 @@
 # CMarshal
 
+[Online Demo](https://cmarshal.herokuapp.com/)
+
 CMarshal brings Go style JSON marshaling / unmarshaling to C.
 
 You can generate cJSON based JSON serializers and deserializers by adding
