@@ -21,4 +21,5 @@ jobs:
           heroku container:login
           docker build . -t registry.heroku.com/cmarshal/web
           docker push registry.heroku.com/cmarshal/web
+          heroku container:release web --app cmarshal
 
