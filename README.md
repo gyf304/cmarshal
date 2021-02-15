@@ -2,6 +2,12 @@
 
 CMarshal brings Go style JSON marshaling / unmarshaling to C.
 
+You can generate cJSON based JSON serializers and deserialers by adding
+```c
+/* cmarshal:`true` */
+```
+to your C struct.
+
 ## Compile
 
 You'll need `clang` and `libclang` installed.
@@ -56,7 +62,7 @@ typedef struct {
 ```
 
 Now `cd` to the header of the directory.
-Assuming your file is called demo.h, do:
+Assuming your file is called `demo.h`, do:
 
 `path/to/cmarshal ./demo.h`
 
