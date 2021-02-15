@@ -52,10 +52,17 @@ static enum CXChildVisitResult findDependentTypesVisitor(CXCursor c, CXCursor pa
 void findDependentTypes(CXType type, TypeCallback *cb, void *context) {
 	FindTypesVisitorClientData data = {cb, context};
 	switch (type.kind) {
+	case CXType_Pointer: {
+		CXType pointeeType = clang_getPointeeType(type);
+		if (pointeeType.kind != CXType_Invalid && pointeeType.kind != CXType_Char_S && pointeeType.kind != CXType_Char_U) {
+			cb(context, pointeeType, NULL);
+		}
+		break;
+	}
 	case CXType_Typedef: {
 		CXType typedefedType = clang_getTypedefDeclUnderlyingType(clang_getTypeDeclaration(type));
 		if (typedefedType.kind != CXType_Invalid && typedefedType.kind != CXType_Elaborated) {
-			cb(context, typedefedType, context);
+			cb(context, typedefedType, NULL);
 		}
 	}
 	default:
