@@ -4,6 +4,13 @@ CMarshal brings Go style JSON marshaling / unmarshaling to C.
 
 ## Compile
 
+You'll need `clang` and `libclang` installed.
+
+You may also need to modify `Makefile` so `-I` points to the correct
+include path for `libclang`
+
+Do:
+
 ```bash
 make cmarshal
 ```
